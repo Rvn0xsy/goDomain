@@ -7,6 +7,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"math"
 	"os"
+	"strings"
 )
 
 const (
@@ -33,6 +34,8 @@ type FlagStruct struct{
 	OutputCSV bool
 	OutputHtml bool
 	OutputMarkdown bool
+	Filter string
+	Columns string
 }
 
 
@@ -170,6 +173,56 @@ func (ldapClient * LdapClient)GetComputers(ldapResults * ldap.SearchResult)  {
 	}
 	t.Render()
 }
+func (ldapClient * LdapClient)GeneralResult(ldapResults * ldap.SearchResult, columns  []string){
+	count := len(ldapResults.Entries)
+	if count  == 0{
+		return
+	}
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	if columns[0] == "" {
+		for _, attr := range ldapResults.Entries[0].Attributes {
+			// fmt.Println(attr.Name)
+			columns = append(columns, attr.Name)
+		}
+	}
+	headers := make([]interface{}, len(columns))
+	for i, v := range columns {
+		headers[i] = v
+	}
+	t.AppendHeader(headers)
+	for _,value := range ldapResults.Entries {
+		// distinguishedName := value.GetAttributeValue("distinguishedName")
+		// sAMAccountName :=  value.GetAttributeValue("sAMAccountName")
+		rowsValue := make([]interface{}, len(columns))
+		for i,c := range columns{
+			value := string(value.GetAttributeValue(c))
+			rowsValue[i] = value
+		}
+		t.AppendRow(rowsValue)
+	}
+	
+	ldapClient.OutputRender(t,count)
+}
+
+func (LdapClient * LdapClient)OutputRender(t table.Writer, count int)  {
+	t.AppendSeparator()
+	t.AppendFooter(table.Row{"Total","", count})
+	t.SetStyle(table.StyleColoredBright)
+	if flagStruct.OutputCSV{
+		t.RenderCSV()
+		return
+	}
+	if flagStruct.OutputHtml{
+		t.RenderHTML()
+		return
+	}
+	if flagStruct.OutputMarkdown{
+		t.RenderMarkdown()
+		return
+	}
+	t.Render()
+}
 
 func (ldapClient * LdapClient)GetUsers(ldapResults * ldap.SearchResult)  {
 	count := len(ldapResults.Entries)
@@ -204,7 +257,6 @@ func (ldapClient * LdapClient)GetUsers(ldapResults * ldap.SearchResult)  {
 func (ldapClient  * LdapClient )GetEntries(ldapResults * ldap.SearchResult, attribute string)  {
 	for _,value := range ldapResults.Entries {
 		value.GetAttributeValues(attribute)
-
 	}
 }
 
@@ -222,6 +274,8 @@ func init()  {
 	flag.BoolVar(&flagStruct.OutputCSV,"csv",false,"Output CSV Format")
 	flag.BoolVar(&flagStruct.OutputHtml,"html",false,"Output html Format")
 	flag.BoolVar(&flagStruct.OutputMarkdown,"markdown",false,"Output Markdown Format")
+	flag.StringVar(&flagStruct.Filter,"filter","","LDAP Filter Query")
+	flag.StringVar(&flagStruct.Columns,"columns","","LDAP Result Columns e.g. DN,name,SID")
 	flag.Parse()
 	if flagStruct.LDAPHost == "" || flagStruct.Username == "" || flagStruct.Password == ""{
 		flag.Usage()
@@ -233,7 +287,6 @@ func init()  {
 func main() {
 
 	connectPro := LdapConnectTCP
-
 	if flagStruct.UDPConnect {
 		connectPro = LdapConnectUDP
 	}
@@ -262,6 +315,12 @@ func main() {
 	if flagStruct.GetUsers {
 		ldapResult := Dumper.Search(FilterUsersQuery)
 		Dumper.GetUsers(ldapResult)
+	}
+
+	if flagStruct.Filter != "" {
+		columns := strings.Split(flagStruct.Columns,",")
+		ldapResult := Dumper.Search(flagStruct.Filter)
+		Dumper.GeneralResult(ldapResult,columns)
 	}
 
 }
