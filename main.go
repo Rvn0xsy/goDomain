@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/go-ldap/ldap"
 	"github.com/jedib0t/go-pretty/v6/table"
+	"math"
 	"os"
 )
 
@@ -92,7 +93,8 @@ func (ldapClient  * LdapClient )Search(query string)(ldapResults * ldap.SearchRe
 		nil,
 		nil,
 	)
-	ldapResults, err = ldapClient.ldapCon.Search(searchRequest)
+
+	ldapResults, err = ldapClient.ldapCon.SearchWithPaging(searchRequest, math.MaxInt32)
 	ldapClient.checkErrorPrintExit(err)
 	// fmt.Println(fmt.Sprintf("[*]Query: %s get %d entries ", query , len(ldapResults.Entries)))
 	return ldapResults
@@ -124,20 +126,31 @@ func (ldapClient * LdapClient)GetComputers(ldapResults * ldap.SearchResult)  {
 	count := len(ldapResults.Entries)
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"#", "operatingSystem", "operatingSystemVersion", "dNSHostName", "msDS-AllowedToDelegateTo"})
+	t.AppendHeader(table.Row{"#", "operatingSystem", "operatingSystemVersion", "dNSHostName", "msDS-AllowedToDelegateTo","sAMAccountName"})
 
 	for index,value := range ldapResults.Entries {
 		operatingSystem := value.GetAttributeValue("operatingSystem")
-		operatingSystemVersion :=  value.GetAttributeValue("operatingSystemVersion")
-		dNSHostName := value.GetAttributeValue("dNSHostName")
-		allowedToDelegate := value.GetAttributeValue("msDS-AllowedToDelegateTo")
 		if operatingSystem == "" {
-			continue
+			operatingSystem = "NULL"
 		}
-
+		operatingSystemVersion :=  value.GetAttributeValue("operatingSystemVersion")
+		if operatingSystemVersion == "" {
+			operatingSystemVersion = "NULL"
+		}
+		dNSHostName := value.GetAttributeValue("dNSHostName")
+		if dNSHostName == "" {
+			dNSHostName = "NULL"
+		}
+		allowedToDelegate := value.GetAttributeValue("msDS-AllowedToDelegateTo")
+		if allowedToDelegate == "" {
+			allowedToDelegate = "NULL"
+		}
+		sAMAccountName := string(value.GetRawAttributeValue("sAMAccountName"))
 		// fmt.Println(fmt.Sprintf("[+]HostName: %s OS: %s  Version: %s",dNSHostName,operatingSystem,operatingSystemVersion ))
-
-		t.AppendRow([]interface{}{index,operatingSystem,operatingSystemVersion,dNSHostName,allowedToDelegate})
+		if sAMAccountName == "" {
+			sAMAccountName = "NULL"
+		}
+		t.AppendRow([]interface{}{index,operatingSystem,operatingSystemVersion,dNSHostName,allowedToDelegate,sAMAccountName})
 	}
 	t.AppendSeparator()
 	t.AppendFooter(table.Row{"Total","", count})
