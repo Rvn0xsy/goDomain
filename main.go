@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/go-ldap/ldap"
+	"github.com/jedib0t/go-pretty/v6/table"
 	"os"
 )
 
@@ -11,6 +12,7 @@ const (
 	LdapConnectTCP = 1
 	LdapConnectUDP = 2
 	FilterTestQuery = "(objectClass=dnsNode)"
+	FilterUsersQuery = "(objectClass=user)"
 	FilterComputerQuery = "(objectCategory=computer)"
 	FilterUnconstrainedDelegationComputerQuery = "(&(samAccountType=805306369)(userAccountControl:1.2.840.113556.1.4.803:=524288)(objectClass=computer))"
 	FilterDelegationComputerQuery = "(&(samAccountType=805306369)(msds-allowedtodelegateto=*)(objectClass=computer))"
@@ -24,8 +26,12 @@ type FlagStruct struct{
 	LDAPPort int
 	UDPConnect bool
 	GetComputer bool
+	GetUsers bool
 	GetUnconstrainedDelegationComputer bool
 	GetDelegationComputer bool
+	OutputCSV bool
+	OutputHtml bool
+	OutputMarkdown bool
 }
 
 
@@ -72,7 +78,7 @@ func (ldapClient  * LdapClient )ConnectLDAP(){
 
 	err = ldapClient.ldapCon.Bind(ldapClient.bindUsername, ldapClient.bindPassword)
 	ldapClient.checkErrorPrintExit(err)
-	fmt.Println("[*]Connect LDAP Server Success")
+	// fmt.Println("[*]Connect LDAP Server Success")
 }
 
 
@@ -88,7 +94,7 @@ func (ldapClient  * LdapClient )Search(query string)(ldapResults * ldap.SearchRe
 	)
 	ldapResults, err = ldapClient.ldapCon.Search(searchRequest)
 	ldapClient.checkErrorPrintExit(err)
-	fmt.Println(fmt.Sprintf("[*]Query: %s get %d entries ", query , len(ldapResults.Entries)))
+	// fmt.Println(fmt.Sprintf("[*]Query: %s get %d entries ", query , len(ldapResults.Entries)))
 	return ldapResults
 }
 
@@ -115,7 +121,12 @@ func (ldapClient  * LdapClient )Close(){
 
 
 func (ldapClient * LdapClient)GetComputers(ldapResults * ldap.SearchResult)  {
-	for _,value := range ldapResults.Entries {
+	count := len(ldapResults.Entries)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"#", "operatingSystem", "operatingSystemVersion", "dNSHostName", "msDS-AllowedToDelegateTo"})
+
+	for index,value := range ldapResults.Entries {
 		operatingSystem := value.GetAttributeValue("operatingSystem")
 		operatingSystemVersion :=  value.GetAttributeValue("operatingSystemVersion")
 		dNSHostName := value.GetAttributeValue("dNSHostName")
@@ -124,11 +135,57 @@ func (ldapClient * LdapClient)GetComputers(ldapResults * ldap.SearchResult)  {
 			continue
 		}
 
-		fmt.Println(fmt.Sprintf("[+]HostName: %s OS: %s  Version: %s",dNSHostName,operatingSystem,operatingSystemVersion ))
-		if allowedToDelegate != "" {
-			fmt.Println("[+]AllowedToDelegate : ", allowedToDelegate)
-		}
+		// fmt.Println(fmt.Sprintf("[+]HostName: %s OS: %s  Version: %s",dNSHostName,operatingSystem,operatingSystemVersion ))
+
+		t.AppendRow([]interface{}{index,operatingSystem,operatingSystemVersion,dNSHostName,allowedToDelegate})
 	}
+	t.AppendSeparator()
+	t.AppendFooter(table.Row{"Total","", count})
+	t.SetStyle(table.StyleColoredBright)
+	if flagStruct.OutputCSV{
+		t.RenderCSV()
+		return
+	}
+
+	if flagStruct.OutputHtml{
+		t.RenderHTML()
+		return
+	}
+	if flagStruct.OutputMarkdown{
+		t.RenderMarkdown()
+		return
+	}
+	t.Render()
+}
+
+func (ldapClient * LdapClient)GetUsers(ldapResults * ldap.SearchResult)  {
+	count := len(ldapResults.Entries)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.AppendHeader(table.Row{"#", "sAMAccountName", "DistinguishedName"})
+
+	for index,value := range ldapResults.Entries {
+		distinguishedName := value.GetAttributeValue("distinguishedName")
+		sAMAccountName :=  value.GetAttributeValue("sAMAccountName")
+		t.AppendRow([]interface{}{index,sAMAccountName,distinguishedName})
+	}
+	t.AppendSeparator()
+	t.AppendFooter(table.Row{"Total","", count})
+	t.SetStyle(table.StyleColoredBright)
+	if flagStruct.OutputCSV{
+		t.RenderCSV()
+		return
+	}
+
+	if flagStruct.OutputHtml{
+		t.RenderHTML()
+		return
+	}
+	if flagStruct.OutputMarkdown{
+		t.RenderMarkdown()
+		return
+	}
+	t.Render()
 }
 
 func (ldapClient  * LdapClient )GetEntries(ldapResults * ldap.SearchResult, attribute string)  {
@@ -146,8 +203,12 @@ func init()  {
 	flag.StringVar(&flagStruct.LDAPHost,"host","","LDAP Host")
 	flag.BoolVar(&flagStruct.UDPConnect,"udp",false,"UDP Connect Method (default: tcp)")
 	flag.BoolVar(&flagStruct.GetComputer,"get-computers",false,"Get All Computers")
+	flag.BoolVar(&flagStruct.GetUsers,"get-users",false,"Get All Users")
 	flag.BoolVar(&flagStruct.GetUnconstrainedDelegationComputer,"get-unconstrained-delegation-computers",false,"Get Unconstrained Delegation Computers")
 	flag.BoolVar(&flagStruct.GetDelegationComputer,"get-delegation-computers",false,"Get Delegation Computers")
+	flag.BoolVar(&flagStruct.OutputCSV,"csv",false,"Output CSV Format")
+	flag.BoolVar(&flagStruct.OutputHtml,"html",false,"Output html Format")
+	flag.BoolVar(&flagStruct.OutputMarkdown,"markdown",false,"Output Markdown Format")
 	flag.Parse()
 	if flagStruct.LDAPHost == "" || flagStruct.Username == "" || flagStruct.Password == ""{
 		flag.Usage()
@@ -183,6 +244,11 @@ func main() {
 	if flagStruct.GetDelegationComputer {
 		ldapResult := Dumper.Search(FilterDelegationComputerQuery)
 		Dumper.GetComputers(ldapResult)
+	}
+
+	if flagStruct.GetUsers {
+		ldapResult := Dumper.Search(FilterUsersQuery)
+		Dumper.GetUsers(ldapResult)
 	}
 
 }
