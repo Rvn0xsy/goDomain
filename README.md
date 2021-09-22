@@ -8,6 +8,12 @@
 
 ![get-computers](./images/img_6.png)
 
+### 自定义过滤器
+
+```bash
+$ goDomain -username <Username> -password <Password> -base-dn <BaseDN> -host <LDAP-Server> -filter '(&(objectCategory=person)(objectClass=user))' -columns distinguishedName,sAMAccountName -csv
+```
+
 ### 获取域内所有机器DN、操作系统、版本号
 
 ```
