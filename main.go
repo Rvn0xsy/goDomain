@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"github.com/go-ldap/ldap"
@@ -36,6 +37,8 @@ type FlagStruct struct{
 	OutputMarkdown bool
 	Filter string
 	Columns string
+	TLSConnection bool
+	VerifyTLS bool
 }
 
 
@@ -74,10 +77,16 @@ func (ldapClient  * LdapClient )SetLDAPBaseDN(baseDN string) {
 	ldapClient.baseDN = baseDN
 }
 
-func (ldapClient  * LdapClient )ConnectLDAP(){
+func (ldapClient  * LdapClient )ConnectLDAP(enableTLS bool,skipVerify bool){
 	var err error
 	connectAddr := fmt.Sprintf("%s:%d", ldapClient.ldapServerHost, ldapClient.ldapServerPort)
-	ldapClient.ldapCon ,err = ldap.Dial(ldapClient.ldapServerConnectProtocol,connectAddr)
+
+	if enableTLS {
+		ldapClient.ldapCon, err = ldap.DialTLS(ldapClient.ldapServerConnectProtocol,connectAddr,&tls.Config{InsecureSkipVerify: skipVerify})
+	}else{
+		ldapClient.ldapCon ,err = ldap.Dial(ldapClient.ldapServerConnectProtocol,connectAddr)
+	}
+
 	ldapClient.checkErrorPrintExit(err)
 
 	err = ldapClient.ldapCon.Bind(ldapClient.bindUsername, ldapClient.bindPassword)
@@ -276,6 +285,8 @@ func init()  {
 	flag.BoolVar(&flagStruct.OutputMarkdown,"markdown",false,"Output Markdown Format")
 	flag.StringVar(&flagStruct.Filter,"filter","","LDAP Filter Query")
 	flag.StringVar(&flagStruct.Columns,"columns","","LDAP Result Columns e.g. DN,name,SID")
+	flag.BoolVar(&flagStruct.TLSConnection,"tls",false,"Enable TLS Connection")
+	flag.BoolVar(&flagStruct.VerifyTLS,"skip-verify",true,"SkipVerify TLS Connection")
 	flag.Parse()
 	if flagStruct.LDAPHost == "" || flagStruct.Username == "" || flagStruct.Password == ""{
 		flag.Usage()
@@ -297,7 +308,7 @@ func main() {
 	Dumper.SetLDAPBaseDN(flagStruct.BaseDN)
 
 	Dumper.SetLDAPServerConnect(flagStruct.LDAPHost, flagStruct.LDAPPort,connectPro)
-	Dumper.ConnectLDAP()
+	Dumper.ConnectLDAP(flagStruct.TLSConnection, flagStruct.VerifyTLS)
 	if flagStruct.GetComputer {
 		ldapResult := Dumper.Search(FilterComputerQuery)
 		Dumper.GetComputers(ldapResult)
